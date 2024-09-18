@@ -122,9 +122,33 @@ struct UserPoints {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+struct MiningQuestDetails {
+    fulfillments: MiningQuestFulfillments,
+    stats: MiningQuestStats,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct MiningQuestStats {
+    pub overall_mined_minutes: u64,
+    pub minutes_from_last_24h: u64,
+    pub three_day_streak_number: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct MiningQuestFulfillments {
+    pub hourly_quest_fulfilled: bool,
+    pub first_hour_in_24h_quest_fulfilled: bool,
+    pub three_day_streak_quest_fulfilled: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct TelemetryDataResponse {
     pub success: bool,
     pub user_points: Option<UserPoints>,
+    pub mining_quest_details: Option<MiningQuestDetails>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -378,6 +402,18 @@ async fn handle_telemetry_data(
                                 .emit("UserPoints", user_points)
                                 .map_err(|e| {
                                     error!("could not send user points as an event: {:?}", e)
+                                })
+                                .unwrap_or(());
+                        }
+                        if let Some(mining_quest_details) = response_inner.mining_quest_details {
+                            debug!(target: LOG_TARGET,"emitting MiningQuestDetails event{:?}",mining_quest_details);
+                            window
+                                .emit("MiningQuestDetails", mining_quest_details)
+                                .map_err(|e| {
+                                    error!(
+                                        "could not send mining quest details as an event: {:?}",
+                                        e
+                                    )
                                 })
                                 .unwrap_or(());
                         }
