@@ -47,7 +47,7 @@ use utils::network_status::NetworkStatus;
 use utils::system_status::SystemStatus;
 use wallet_adapter::WalletState;
 use websocket_events_manager::WebsocketEventsManager;
-use websocket_manager::{WebsocketManager, WebsocketMessage};
+use websocket_manager::{WebsocketManager, WebsocketManagerStatusMessage, WebsocketMessage};
 
 use log4rs::config::RawConfig;
 use serde::Serialize;
@@ -1008,6 +1008,7 @@ struct UniverseAppState {
     systemtray_manager: Arc<RwLock<SystemTrayManager>>,
     events_manager: Arc<EventsManager>,
     websocket_message_tx: Arc<tokio::sync::mpsc::Sender<WebsocketMessage>>,
+    websocket_manager_status_rx: Arc<watch::Receiver<WebsocketManagerStatusMessage>>,
     websocket_manager: Arc<RwLock<WebsocketManager>>,
     websocket_event_manager: Arc<RwLock<WebsocketEventsManager>>,
 }
@@ -1045,6 +1046,11 @@ fn main() {
         watch::channel::<Option<WalletState>>(None);
     let (websocket_message_tx, websocket_message_rx) =
         tokio::sync::mpsc::channel::<WebsocketMessage>(500);
+
+    //NOTE DONT use websocket_state_tx anywhere else than WebsocketManager
+    let (websocket_manager_status_tx, websocket_manager_status_rx) =
+        watch::channel::<WebsocketManagerStatusMessage>(WebsocketManagerStatusMessage::Stopped);
+
     let (gpu_status_tx, gpu_status_rx) = watch::channel(GpuMinerStatus::default());
     let (cpu_miner_status_watch_tx, cpu_miner_status_watch_rx) =
         watch::channel::<CpuMinerStatus>(CpuMinerStatus::default());
@@ -1116,7 +1122,7 @@ fn main() {
         cpu_miner_status_watch_rx.clone(),
         gpu_status_rx.clone(),
         base_node_watch_rx.clone(),
-        shutdown.to_signal(),
+        shutdown.clone(),
         websocket_message_tx.clone(),
     );
 
@@ -1126,7 +1132,6 @@ fn main() {
         node_status_watch_rx: Arc::new(base_node_watch_rx),
         wallet_state_watch_rx: Arc::new(wallet_state_watch_rx.clone()),
         cpu_miner_status_watch_rx: Arc::new(cpu_miner_status_watch_rx),
-        websocket_message_tx: Arc::new(websocket_message_tx),
         gpu_latest_status: Arc::new(gpu_status_rx),
         p2pool_latest_status: Arc::new(p2pool_stats_rx),
         is_setup_finished: Arc::new(RwLock::new(false)),
@@ -1151,9 +1156,14 @@ fn main() {
         cached_p2pool_connections: Arc::new(RwLock::new(None)),
         systemtray_manager: Arc::new(RwLock::new(SystemTrayManager::new())),
         events_manager: Arc::new(EventsManager::new(wallet_state_watch_rx)),
+        websocket_message_tx: Arc::new(websocket_message_tx),
+        websocket_manager_status_rx: Arc::new(websocket_manager_status_rx.clone()),
         websocket_manager: Arc::new(RwLock::new(WebsocketManager::new(
             app_in_memory_config.clone(),
             websocket_message_rx,
+            shutdown.clone(),
+            websocket_manager_status_tx.clone(),
+            websocket_manager_status_rx.clone(),
         ))),
         websocket_event_manager: Arc::new(RwLock::new(websocket_events_manager)),
     };
